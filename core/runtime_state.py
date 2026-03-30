@@ -1,80 +1,73 @@
 # -*- coding: utf-8 -*-
 """
-runtime_state.py — The singular object passed through the V6 Agent Loop.
-Defines strict data contracts for every layer.
+runtime_state.py — The Pipeline Vehicle
+Defines the `RuntimeState` dataclass flowing through the 6-layer architecture.
 """
 
-from typing import List, Dict, Any, Optional
+from dataclasses import dataclass, field
+from typing import Dict, Any, List, Optional
 from datetime import datetime
+from core.contracts import (
+    UncertaintyProfile, ReasoningPolicy, DialogueState, MemoryContextBundle,
+    ToolDecision, ResponsePlan, Lesson, ImprovementCandidate
+)
 
-class MemoryContext:
-    def __init__(self):
-        self.semantic: str = ""
-        self.episodic: str = ""
-        self.procedural: str = ""
-        self.working: str = ""
-        
-    def to_combined_string(self) -> str:
-        parts = []
-        if self.working: parts.append(f"[Working Memory]\n{self.working}")
-        if self.semantic: parts.append(f"[Semantic Facts]\n{self.semantic}")
-        if self.episodic: parts.append(f"[Recent Episodes]\n{self.episodic}")
-        if self.procedural: parts.append(f"[Procedures]\n{self.procedural}")
-        return "\n\n".join(parts)
-
+@dataclass
 class MemoryItem:
-    def __init__(self, item_type: str, content: str, topic: str = "", metadata: Optional[Dict] = None):
-        self.item_type = item_type  # "semantic", "episodic", "procedural"
-        self.content = content
-        self.topic = topic
-        self.metadata = metadata or {}
-        self.timestamp = datetime.now()
+    item_type: str
+    content: str
+    topic: str = ""
+    metadata: dict = field(default_factory=dict)
+    timestamp: datetime = field(default_factory=datetime.now)
 
+@dataclass
 class ActionCandidate:
-    def __init__(self, tool_name: str, params: dict, expected_result: str = "", risk_level: str = "low"):
-        self.tool_name = tool_name
-        self.params = params
-        self.expected_result = expected_result
-        self.risk_level = risk_level  # "low", "medium", "high"
-        
-class ReflectionResult:
-    def __init__(self, success: bool, confidence: float, observed_result: str, needs_recovery: bool = False, recovery_action: Optional[str] = None):
-        self.success = success
-        self.confidence = confidence
-        self.observed_result = observed_result
-        self.needs_recovery = needs_recovery
-        self.recovery_action = recovery_action
+    tool_name: str
+    params: dict
+    expected_result: str = ""
+    risk_level: str = "low"
 
+@dataclass
+class ReflectionResult:
+    success: bool
+    evaluation: str = ""
+    memory_updates: List[Dict[str, Any]] = field(default_factory=list)
+
+@dataclass
 class RuntimeState:
-    """
-    The central intelligence packet that flows through the Jarvis V6 core loop.
-    Modules MUST only read and edit this state object.
-    """
-    def __init__(self, user_input: str):
-        # 1. Perception
-        self.user_input: str = user_input
-        self.parsed_intent: str = ""
-        self.task_type: str = "chat"  # chat, command, planning, debug
-        
-        # 2. Context
-        self.memory_context: MemoryContext = MemoryContext()
-        self.active_constraints: List[str] = []
-        
-        # 3. Reasoning
-        self.current_goal: str = ""
-        self.selected_action: Optional[ActionCandidate] = None
-        self.response_style: str = "natural"
-        
-        # 4. Action
-        self.action_result: str = ""
-        self.action_success: bool = False
-        
-        # 5. Reflection
-        self.reflection: Optional[ReflectionResult] = None
-        self.pending_memory_writes: List[Dict[str, Any]] = []  # To be flushed by MemoryRouter
-        self.plan_queue: List[ActionCandidate] = []
-        
-        
-        # Diagnostics
-        self.loop_started_at = datetime.now()
-        self.risk_score: float = 0.0
+    # Phase 1 & 2 Core fields mapping
+    raw_user_input: str
+    normalized_input: str = ""
+    parsed_intent: str = ""
+    inferred_mode: str = "chat"
+    current_goal: str = ""
+    subgoal: str = ""
+
+    # Sub-component tracking
+    dialogue_state: DialogueState = field(default_factory=DialogueState)
+    retrieved_memory: MemoryContextBundle = field(default_factory=MemoryContextBundle)
+    memory_confidence: float = 1.0
+    contradiction_flags: List[str] = field(default_factory=list)
+    
+    # Reasoning Models
+    uncertainty_profile: UncertaintyProfile = field(default_factory=UncertaintyProfile)
+    reasoning_policy: ReasoningPolicy = field(default_factory=ReasoningPolicy)
+    tool_decision: ToolDecision = field(default_factory=ToolDecision)
+    response_plan: ResponsePlan = Field(default_factory=ResponsePlan)
+    
+    # Legacy Action execution bridging
+    selected_action: Optional[ActionCandidate] = None
+    action_result: str = ""
+    reflection_result: Optional[ReflectionResult] = None
+    plan_queue: List[ActionCandidate] = field(default_factory=list)
+    
+    # Reflections
+    pending_lessons: List[Lesson] = field(default_factory=list)
+    improvement_candidates: List[ImprovementCandidate] = field(default_factory=list)
+    
+    metadata: dict = field(default_factory=dict)
+    logs: List[str] = field(default_factory=list)
+
+    def log(self, message: str):
+        print(f"[RunState] {message}")
+        self.logs.append(message)

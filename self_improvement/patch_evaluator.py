@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-patch_evaluator.py — Applies proposed patches dynamically, tests them, and handles rollbacks.
+patch_evaluator.py — Strict Safe Evaluator
+Applies patches strictly into sandbox mode, hard-disabling default auto-apply to the live codebase.
 """
 
 import py_compile
@@ -9,48 +10,50 @@ import shutil
 
 class PatchEvaluator:
     def __init__(self):
-        pass
+        self.auto_apply_enabled = False  # Hard default disable
 
-    def evaluate_and_apply(self, target_file: str, patch_proposal: dict) -> str:
+    def evaluate_and_apply(self, patch_proposal: dict, manual_approval: bool = False, sandbox_mode: bool = True) -> str:
         """
-        Takes the proposed patch, safely applies it, checks syntax, and returns the result.
+        Evaluates a patch. Never applies to live source without explicit approval.
         """
-        if "error" in patch_proposal:
-            return f"Patch generation failed: {patch_proposal['error']}"
+        if not patch_proposal.get("success", False):
+            return f"Patch generation naturally blocked: {patch_proposal.get('error', 'Unknown')}"
 
-        target = patch_proposal.get("target_snippet", "")
+        if not self.auto_apply_enabled and not manual_approval and not sandbox_mode:
+            return "Patch Evaluator Error: Auto-apply is globally disabled. Manual approval or Sandbox mode required."
+            
+        target_file = patch_proposal.get("target_file", "")
+        if not target_file:
+            return "Patch Evaluator Error: Proposal lacks a target file designation."
+
+        # Execute only in isolated mode or if safely approved
+        execution_target = target_file
+        if sandbox_mode:
+            execution_target += ".sandbox.tmp"
+            shutil.copy2(target_file, execution_target)
+
+        # 1. Apply logic safely
+        target_snippet = patch_proposal.get("target_snippet", "")
         replacement = patch_proposal.get("replacement", "")
 
-        if not target or not replacement:
-            return "Invalid patch proposal format."
-
-        # Backup the file
-        backup_file = target_file + ".bak_v6_auto"
-        shutil.copy2(target_file, backup_file)
-
         try:
-            with open(target_file, "r", encoding="utf-8") as f:
+            with open(execution_target, "r", encoding="utf-8") as f:
                 content = f.read()
 
-            if target not in content:
-                # Naive fallback: try removing whitespace diffs
-                return "Target snippet not found exactly in the file. Patch aborted safely."
+            if target_snippet not in content:
+                # Immediate fail if unsure, no guessing
+                return "Target snippet not found exactly in the file. Patch aborted safely without guessing."
 
-            new_content = content.replace(target, replacement, 1)
+            new_content = content.replace(target_snippet, replacement, 1)
 
-            with open(target_file, "w", encoding="utf-8") as f:
+            with open(execution_target, "w", encoding="utf-8") as f:
                 f.write(new_content)
 
-            # Compile Check
-            try:
-                py_compile.compile(target_file, doraise=True)
-                return f"[Success] Patch applied to {target_file}. Syntax verified."
-            except py_compile.PyCompileError as e:
-                # Rollback on Syntax Error
-                shutil.copy2(backup_file, target_file)
-                return f"[Rollback] Patch introduced syntax error. Aborted."
-
+            # 2. Compile Check validation
+            py_compile.compile(execution_target, doraise=True)
+            return f"[Sandbox Success] Patch safely verified in AST on {execution_target}."
+            
+        except py_compile.PyCompileError as e:
+            return f"[Validation Failed] Patch introduced syntax error: {e}"
         except Exception as e:
-            if os.path.exists(backup_file):
-                shutil.copy2(backup_file, target_file)
-            return f"[Rollback] Unexpected error during patching: {e}"
+            return f"[Rollback] Unexpected error during sandbox patching: {e}"

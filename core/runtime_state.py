@@ -53,7 +53,7 @@ class RuntimeState:
     uncertainty_profile: UncertaintyProfile = field(default_factory=UncertaintyProfile)
     reasoning_policy: ReasoningPolicy = field(default_factory=ReasoningPolicy)
     tool_decision: ToolDecision = field(default_factory=ToolDecision)
-    response_plan: ResponsePlan = Field(default_factory=ResponsePlan)
+    response_plan: ResponsePlan = field(default_factory=ResponsePlan)
     
     # Legacy Action execution bridging
     selected_action: Optional[ActionCandidate] = None

@@ -5,13 +5,14 @@ Instead of returning a single ActionCandidate, it returns a List of ActionCandid
 """
 
 from core.runtime_state import RuntimeState, ActionCandidate
-import ollama
+from models.model_router import ModelRouter
+from models.model_contracts import ModelRequest, TaskType
 import json
 from typing import List
 
 class Planner:
     def __init__(self, planning_model: str = "llama3:8b"):
-        self.model = planning_model
+        self.router = ModelRouter()
 
     def create_plan(self, state: RuntimeState) -> List[ActionCandidate]:
         """
@@ -39,13 +40,19 @@ class Planner:
         }}
         """
         try:
-             res = ollama.chat(
-                 model=self.model,
-                 messages=[{"role": "user", "content": prompt}],
-                 format="json",
-                 options={"temperature": 0.2, "num_predict": 300}
-             )
-             data = json.loads(res.message.content)
+             req = ModelRequest(user_input=prompt, task_type=TaskType.REASONING, temperature=0.2, max_tokens=500)
+             res = self.router.route_request(req)
+             
+             if not res.success:
+                 raise Exception(res.error_message)
+                 
+             content = res.content
+             if "```json" in content:
+                 content = content.split("```json")[1].split("```")[0]
+             elif "```" in content:
+                 content = content.split("```")[1]
+                 
+             data = json.loads(content.strip())
              steps = data.get("steps", [])
              
              candidates = []

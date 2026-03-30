@@ -5,13 +5,15 @@ Uses the parsed intent and context from RuntimeState to pick a single ActionCand
 """
 
 from core.runtime_state import RuntimeState, ActionCandidate
-import ollama
+from models.model_router import ModelRouter
+from models.model_contracts import ModelRequest, TaskType
 import json
+import re
 from typing import Optional
 
 class DecisionEngine:
     def __init__(self, reasoning_model: str = "llama3:8b"):
-        self.model = reasoning_model
+        self.router = ModelRouter()
         
     def decide(self, state: RuntimeState) -> Optional[ActionCandidate]:
         """
@@ -51,13 +53,19 @@ class DecisionEngine:
         }}
         """
         try:
-            res = ollama.chat(
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                format="json",
-                options={"temperature": 0.1, "num_predict": 150}
-            )
-            data = json.loads(res.message.content)
+            req = ModelRequest(user_input=prompt, task_type=TaskType.REASONING, temperature=0.1, max_tokens=200)
+            res = self.router.route_request(req)
+            
+            if not res.success:
+                raise Exception(res.error_message)
+
+            content = res.content
+            if "```json" in content:
+                content = content.split("```json")[1].split("```")[0]
+            elif "```" in content:
+                content = content.split("```")[1]
+                
+            data = json.loads(content.strip())
             return ActionCandidate(
                 tool_name=data.get("tool_name", "respond"),
                 params=data.get("params", {}),

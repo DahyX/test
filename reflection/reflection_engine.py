@@ -4,12 +4,13 @@ reflection_engine.py — Evaluates the action's success and generates Memory Wri
 """
 
 from core.runtime_state import RuntimeState, ReflectionResult
-import ollama
+from models.model_router import ModelRouter
+from models.model_contracts import ModelRequest, TaskType
 import json
 
 class ReflectionEngine:
     def __init__(self, model: str = "llama3:8b"):
-        self.model = model
+        self.router = ModelRouter()
         
     def evaluate(self, state: RuntimeState) -> RuntimeState:
         """
@@ -43,13 +44,19 @@ class ReflectionEngine:
         """
         
         try:
-             res = ollama.chat(
-                 model=self.model,
-                 messages=[{"role": "user", "content": prompt}],
-                 format="json",
-                 options={"temperature": 0.1, "num_predict": 200}
-             )
-             data = json.loads(res.message.content)
+             req = ModelRequest(user_input=prompt, task_type=TaskType.REASONING, temperature=0.1, max_tokens=300)
+             res = self.router.route_request(req)
+             
+             if not res.success:
+                 raise Exception(res.error_message)
+
+             content = res.content
+             if "```json" in content:
+                 content = content.split("```json")[1].split("```")[0]
+             elif "```" in content:
+                 content = content.split("```")[1]
+                 
+             data = json.loads(content.strip())
              
              state.reflection = ReflectionResult(
                  success=data.get("success", False),

@@ -1,53 +1,32 @@
 # -*- coding: utf-8 -*-
 """
-patch_proposer.py — Safe proposal constraint wrapper
-Overrides vague patches. Always fails safely if vague.
+patch_proposer.py — Safe Patch Proposal Wrapper
+Defines strict rules requiring target verification prior to AI patch logic execution.
 """
 
 import os
-import re
+from typing import Dict
 
 class PatchProposer:
-    def __init__(self, model: str = "qwen2.5-coder:1.5b"):
-        self.model = model
-        self.allowlist = [
-            "reasoning/intent_analyzer.py",
-            "perception/signal_extractor.py",
-        ]
+    ALLOWLIST_DIRS = ["core/", "reasoning/", "self_improvement/", "tests/"]
 
-    def propose_patch(self, instruction: str) -> dict:
-        """
-        Generates a proposal ONLY if a valid target file is strictly defined in the prompt.
-        Defaults to proposal-only behavior.
-        """
-        # 1. Enforce Explicit Target File Requirement
-        target_file = None
-        for module in self.allowlist:
-            if module in instruction:
-                target_file = module
-                break
-                
-        # Also check for .py regex
-        py_match = re.search(r'([\w/]+\.py)', instruction)
-        if py_match and not target_file:
-            target_file = py_match.group(1)
-
+    def propose_patch(self, instruction: str, target_file: str) -> Dict[str, str]:
+        """Propose a patch but never execute or assume target."""
         if not target_file:
-            return {"success": False, "error": "Explicit target file required and missing from instruction."}
+            return {"error": "Missing explicit target file. Refusing to guess."}
 
-        if target_file not in self.allowlist:
-            return {"success": False, "error": f"Target file '{target_file}' is protected and not in the Sandbox Allowlist."}
+        target_file_normalized = target_file.replace("\\", "/")
+        is_allowed = any(target_file_normalized.startswith(d) for d in self.ALLOWLIST_DIRS)
+        
+        if not is_allowed:
+            return {"error": f"Target file '{target_file}' is not in the allowlist."}
 
         if not os.path.exists(target_file):
-            return {"success": False, "error": f"Target file '{target_file}' does not exist locally."}
+            return {"error": f"Target file '{target_file}' does not exist. Failing safely."}
 
-        # 2. If safe, generate the proposal-only payload
-        # Placeholder for LLM patch generation
+        # Proposal filler wrapper logic returning safe struct outputs
         return {
-            "success": True,
-            "target_snippet": "# Replace me",
-            "replacement": "# Replaced",
-            "target_file": target_file,
-            "reason": "Safe sandbox execution.",
-            "mode": "proposal_only"  # Default configuration
+            "status": "proposed",
+            "target": target_file,
+            "proposal": f"Proposed hypothetical patch string driven entirely safely against: {instruction}"
         }

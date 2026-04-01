@@ -1,58 +1,50 @@
 # -*- coding: utf-8 -*-
 """
-intent_analyzer.py — Deterministic Gatekeeper
-Overrides the loose V5/V6 LLM intent guessers. Uses hard heuristics first to map exactly
-into a `RequestRoutingDecision`.
+intent_analyzer.py — Deterministic Intent Resolution
+Defines heuristic checks to avoid ambiguous broad evaluation on meta prompts.
 """
 
-from typing import Optional
-from core.routing_models import RequestRoutingDecision
-from core.source_permissions import SourcePermissionsPolicy
+import re
+from core.routing_models import RequestScope, RequestRoutingDecision
+from core.source_permissions import get_routing_decision
 
 class IntentAnalyzer:
-    def __init__(self):
-        self.policy = SourcePermissionsPolicy()
+    """Analyzes intent deterministically before calling broad retrieval."""
+    
+    LOCAL_STATUS_REGEX = re.compile(r"(did you work on any files|what did you change|did you edit anything|^status$)", re.IGNORECASE)
+    LOCAL_HISTORY_REGEX = re.compile(r"(improvement history|show (?:previous )?(?:patch|improvement) (?:history|attempts?)|show patches|recent patches|patch history)", re.IGNORECASE)
+    BENCHMARK_REGEX = re.compile(r"(benchmark|run benchmark|benchmark status|show benchmark)", re.IGNORECASE)
+    HELP_REGEX = re.compile(r"(help|what can you do|commands|show help|available commands)", re.IGNORECASE)
+    REPO_CODE_REGEX = re.compile(r"(inspect local code|show me the code|what is in\s+\w+\.py)", re.IGNORECASE)
+    SELF_IMPROVEMENT_REGEX = re.compile(r"(improve yourself|patch yourself|modify your codebase|^self-check$)", re.IGNORECASE)
+    
+    def analyze_intent(self, prompt: str) -> RequestRoutingDecision:
+        """Deterministically classifies request to hard behavior bounds."""
         
-        # Rigid Heuristics to block hallucinations
-        self.local_status_triggers = ["did you work on", "did you edit", "what did you change", "status", "recent files"]
-        self.history_triggers = ["improvement history", "patch history", "previous attempts"]
-        self.web_triggers = ["google", "search the web", "look up"]
-        self.improvement_triggers = ["optimize", "refactor", "upgrade", "patch"]
-
-    def evaluate(self, user_input: str) -> RequestRoutingDecision:
-        """Determines routing scope systematically. LLM fallback ONLY if all fail."""
-        text = user_input.lower()
-        scope = "chat"
-        reason = "Fallback to generic chat."
-
-        # 1. Hardware-level interception of local questions
-        if any(t in text for t in self.local_status_triggers):
-            scope = "local_status"
-            reason = "Keyword matched local file status query."
-        elif any(t in text for t in self.history_triggers):
-            scope = "local_history"
-            reason = "Keyword matched improvement history log query."
-        elif any(t in text for t in self.improvement_triggers):
-            scope = "self_improvement_request"
-            reason = "Keyword matched codebase patching."
-        elif any(t in text for t in self.web_triggers):
-            scope = "web_research"
-            reason = "Keyword explicitly requested internet."
-        
-        # Assume LLM fallback for repository logic if code indicators are present
-        elif "code" in text or "function" in text or "file" in text:
-            scope = "repo_code_question"
-            reason = "Heuristic code question."
-
-        # Bind permission matrix
-        perms = self.policy.get_policy(scope)
-        decision = RequestRoutingDecision(
-            request_scope=scope,
-            allowed_sources=perms["allowed_sources"],
-            forbidden_sources=perms["forbidden_sources"],
-            requires_web=perms["requires_web"],
-            requires_local_state=perms["requires_local_state"],
-            requires_tools=perms["requires_tools"],
-            reason=reason
-        )
-        return decision
+        if self.HELP_REGEX.search(prompt):
+            return RequestRoutingDecision(
+                request_scope=RequestScope.HELP_REQUEST,
+                reason="Matched help command heuristics.",
+                confidence=1.0
+            )
+            
+        if self.BENCHMARK_REGEX.search(prompt):
+            return RequestRoutingDecision(
+                request_scope=RequestScope.BENCHMARK_REQUEST,
+                reason="Matched benchmark command heuristics.",
+                confidence=1.0
+            )
+            
+        if self.LOCAL_STATUS_REGEX.search(prompt):
+            return get_routing_decision(RequestScope.LOCAL_STATUS, reason="Matched local status heuristics.")
+            
+        if self.LOCAL_HISTORY_REGEX.search(prompt):
+            return get_routing_decision(RequestScope.LOCAL_HISTORY, reason="Matched local history heuristics.")
+            
+        if self.SELF_IMPROVEMENT_REGEX.search(prompt):
+            return get_routing_decision(RequestScope.SELF_IMPROVEMENT_REQUEST, reason="Matched self-improvement heuristics.")
+            
+        if self.REPO_CODE_REGEX.search(prompt):
+            return get_routing_decision(RequestScope.REPO_CODE_QUESTION, reason="Matched repository code heuristics.")
+            
+        return get_routing_decision(RequestScope.CHAT, reason="Fallback to safe chat defaults.")

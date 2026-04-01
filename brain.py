@@ -117,6 +117,9 @@ INTENT_PATTERNS = [
     # Clear
     (r"(forget (our conversation|everything)|clear (history|chat)|start over|reset chat)", "clear_history", 1.0),
 
+    # ECC Commands
+    (r"^/(plan|tdd|code-review|security-scan|build-fix|e2e|go-review|python-review|multi-[a-z-]+)\b", "ecc_command", 1.0),
+
     # Goodbye
     (r"^(bye|goodbye|see you|farewell|take care|later|exit|quit)[\s!.,]?$", "bye", 1.0),
 
@@ -448,6 +451,18 @@ class Brain:
         if intent == "shell":
             cmd = re.sub(r"^(run (command|script)|shell|execute|terminal|cmd)\s+", "", raw).strip()
             return {"action": "desktop", "params": {"cmd": "run", "command": cmd}, "response": "Running command."}
+
+        if intent == "ecc_command":
+            m = re.search(r"^/([a-z0-9-]+)\b", lower)
+            if m:
+                cmd = m.group(1)
+                query = re.sub(r"^/[a-z0-9-]+\s*", "", raw).strip()
+                action_name = f"ecc_cmd_{cmd.replace('-', '_')}"
+                return {
+                    "action": action_name,
+                    "params": {"query": query, "context": self.last_answer or ""},
+                    "response": f"Executing ECC workflow: {cmd}..."
+                }
 
         # ── UNKNOWN — use TF-IDF to find the best memory match ────────────────
         return self._smart_search(raw, lower)

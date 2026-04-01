@@ -97,13 +97,10 @@ class PluginLoader:
 
     def get_action_descriptions(self) -> list:
         """Return plugin actions in a format suitable for the LLM tool schema."""
-        seen_names = set()
         results = []
-        for action, (mod, meta) in self._plugins.items():
-            if meta["name"] not in seen_names:
-                seen_names.add(meta["name"])
-                results.append({
-                    "action": action,
-                    "description": meta["description"],
-                })
+        for action, (_, meta) in sorted(self._plugins.items()):
+            results.append({
+                "action": action,
+                "description": meta["description"],
+            })
         return results

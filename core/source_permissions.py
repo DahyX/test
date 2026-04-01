@@ -20,6 +20,11 @@ def get_routing_decision(scope: RequestScope, reason: str = "") -> RequestRoutin
         base_decision.requires_local_state = True
         return base_decision
 
+    elif scope == RequestScope.SELF_CHECK_REQUEST:
+        base_decision.allowed_sources = ["local_workspace", "local_runtime"]
+        base_decision.requires_local_state = True
+        return base_decision
+
     elif scope == RequestScope.REPO_CODE_QUESTION:
         base_decision.allowed_sources = ["local_workspace"]
         base_decision.requires_local_state = True

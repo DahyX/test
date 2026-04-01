@@ -4,6 +4,8 @@ test_jarvis_stabilization.py — Integration Regression Coverage
 Asserts explicitly safe behaviors enforce all bounds correctly.
 """
 
+from unittest.mock import patch
+
 import pytest
 from core.routing_models import RequestScope
 from core.source_permissions import get_routing_decision
@@ -16,6 +18,11 @@ def test_local_status_no_web():
     decision = get_routing_decision(RequestScope.LOCAL_STATUS)
     assert "web_search" in decision.forbidden_sources
     assert decision.requires_web is False
+
+def test_self_check_uses_local_runtime_only():
+    decision = get_routing_decision(RequestScope.SELF_CHECK_REQUEST)
+    assert "web_search" in decision.forbidden_sources
+    assert decision.requires_local_state is True
 
 def test_intent_analyzer_local_status():
     analyzer = IntentAnalyzer()
@@ -34,8 +41,8 @@ def test_patch_evaluator_no_auto_apply():
     result = evaluator.evaluate_and_apply({"target": "core/main_loop.py"}, manual_approval=False)
     assert result["status"] == "blocked"
 
-def test_main_loop_local_status_fallback(mocker):
+def test_main_loop_local_status_fallback():
     loop = AgentLoop()
-    mocker.patch.object(loop.history_store, "get_local_status_summary")
-    loop.run_cycle("did you work on any files?")
-    loop.history_store.get_local_status_summary.assert_called_once()
+    with patch.object(loop.history_store, "get_local_status_summary") as mocked_status:
+        loop.run_cycle("did you work on any files?")
+    mocked_status.assert_called_once()

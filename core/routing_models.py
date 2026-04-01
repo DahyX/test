@@ -13,6 +13,7 @@ class RequestScope(str, Enum):
     LOCAL_HISTORY = "local_history"
     BENCHMARK_REQUEST = "benchmark_request"
     HELP_REQUEST = "help_request"
+    SELF_CHECK_REQUEST = "self_check_request"
     CHAT = "chat"
     REPO_CODE_QUESTION = "repo_code_question"
     WEB_RESEARCH = "web_research"

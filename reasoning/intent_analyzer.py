@@ -15,8 +15,9 @@ class IntentAnalyzer:
     LOCAL_HISTORY_REGEX = re.compile(r"(improvement history|show (?:previous )?(?:patch|improvement) (?:history|attempts?)|show patches|recent patches|patch history)", re.IGNORECASE)
     BENCHMARK_REGEX = re.compile(r"(benchmark|run benchmark|benchmark status|show benchmark)", re.IGNORECASE)
     HELP_REGEX = re.compile(r"(help|what can you do|commands|show help|available commands)", re.IGNORECASE)
+    SELF_CHECK_REGEX = re.compile(r"^(self-check|self check|health check|system health)$", re.IGNORECASE)
     REPO_CODE_REGEX = re.compile(r"(inspect local code|show me the code|what is in\s+\w+\.py)", re.IGNORECASE)
-    SELF_IMPROVEMENT_REGEX = re.compile(r"(improve yourself|patch yourself|modify your codebase|^self-check$)", re.IGNORECASE)
+    SELF_IMPROVEMENT_REGEX = re.compile(r"(improve yourself|patch yourself|modify your codebase)", re.IGNORECASE)
     
     def analyze_intent(self, prompt: str) -> RequestRoutingDecision:
         """Deterministically classifies request to hard behavior bounds."""
@@ -34,6 +35,9 @@ class IntentAnalyzer:
                 reason="Matched benchmark command heuristics.",
                 confidence=1.0
             )
+
+        if self.SELF_CHECK_REGEX.search(prompt):
+            return get_routing_decision(RequestScope.SELF_CHECK_REQUEST, reason="Matched self-check heuristics.")
             
         if self.LOCAL_STATUS_REGEX.search(prompt):
             return get_routing_decision(RequestScope.LOCAL_STATUS, reason="Matched local status heuristics.")

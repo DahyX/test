@@ -59,5 +59,6 @@ def test_web_wrapper_exposes_inherited_runtime_counts():
     stats = wrapper.memory.stats()
 
     assert wrapper.brain.model == "Jarvis V6 + Claude Inheritance"
-    assert stats["claude_commands"] > 0
-    assert stats["claude_agents"] > 0
+    assert stats["episodes"] >= 0
+    assert wrapper.runtime_status["ecc_command_count"] > 0
+    assert wrapper.runtime_status["ecc_agent_count"] > 0

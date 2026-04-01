@@ -19,34 +19,6 @@ class BrainInfo:
         self.model = model
 
 
-class MemoryInfo:
-    def __init__(self, runtime_status: dict):
-        self.runtime_status = runtime_status
-
-    def stats(self):
-        return {
-            "total_facts": 0,
-            "semantic_chunks": 0,
-            "urls_visited": 0,
-            "episodes": 0,
-            "procedures": 0,
-            "claude_commands": self.runtime_status["ecc_command_count"],
-            "claude_agents": self.runtime_status["ecc_agent_count"],
-            "claude_extended_commands": self.runtime_status["cce_command_count"],
-            "claude_extended_skills": self.runtime_status["cce_skill_count"],
-        }
-
-    def get_recent_episodes(self, limit=50):
-        return []
-
-
-class LearnerInfo:
-    def __init__(self):
-        self.running = False
-        self.queue = []
-        self._pages_learned = 0
-
-
 class EvaluatorInfo:
     def __init__(self, wrapper):
         self.wrapper = wrapper
@@ -69,12 +41,19 @@ class SelfImproverInfo:
         return self.wrapper.loop.format_self_check(results)
 
 
+class LearnerInfo:
+    def __init__(self):
+        self.running = False
+        self.queue = []
+        self._pages_learned = 0
+
+
 class JarvisWrapper:
     def __init__(self):
         self.loop = AgentLoop()
         self.runtime_status = self.loop.get_runtime_status()
         self.brain = BrainInfo(self.runtime_status["model_label"])
-        self.memory = MemoryInfo(self.runtime_status)
+        self.memory = self.loop.memory
         self.learner = LearnerInfo()
         self.evaluator = EvaluatorInfo(self)
         self.self_improver = SelfImproverInfo(self)
@@ -82,7 +61,6 @@ class JarvisWrapper:
     def refresh_runtime_status(self):
         self.runtime_status = self.loop.get_runtime_status()
         self.brain.model = self.runtime_status["model_label"]
-        self.memory.runtime_status = self.runtime_status
 
     def run(self, msg):
         response = self.loop.run_cycle(msg)
@@ -196,6 +174,9 @@ def status():
     jarvis.refresh_runtime_status()
     stats = jarvis.memory.stats()
     runtime = jarvis.runtime_status
+    repo = runtime.get("repo", {})
+    llm_lab = runtime.get("llm_lab", {})
+    foundation = runtime.get("cognitive_foundation", {})
 
     return jsonify(
         {
@@ -205,6 +186,8 @@ def status():
             "sources": stats.get("urls_visited", 0),
             "episodes": stats.get("episodes", 0),
             "procedures": stats.get("procedures", 0),
+            "working_items": stats.get("working_items", 0),
+            "profile_items": stats.get("profile_items", 0),
             "learner_running": jarvis.learner.running,
             "learner_queue": len(jarvis.learner.queue),
             "learner_learned": jarvis.learner._pages_learned,
@@ -213,6 +196,19 @@ def status():
             "claude_extended_commands": runtime["cce_command_count"],
             "claude_extended_skills": runtime["cce_skill_count"],
             "claude_aliases": runtime["alias_count"],
+            "chat_ready": runtime.get("chat_ready", False),
+            "tool_count": runtime.get("tool_count", 0),
+            "repo_files": repo.get("indexed_files", 0),
+            "repo_python_files": repo.get("python_files", 0),
+            "llm_lab_phase": llm_lab.get("phase", ""),
+            "llm_lab_focus": llm_lab.get("focus", ""),
+            "llm_lab_source": llm_lab.get("source_url", ""),
+            "llm_lab_dataset_path": llm_lab.get("dataset_path", ""),
+            "llm_lab_dataset_examples": llm_lab.get("dataset_examples", 0),
+            "foundation_model_roles": foundation.get("model_roles", 0),
+            "foundation_verifier_stages": foundation.get("verifier_stages", 0),
+            "foundation_autonomy_jobs": foundation.get("autonomy_jobs", 0),
+            "foundation_benchmark_tracks": foundation.get("benchmark_tracks", 0),
         }
     )
 
@@ -234,7 +230,7 @@ def self_check():
     with jarvis_lock:
         results = jarvis.self_improver.self_check()
         report = jarvis.self_improver.format_self_check(results)
-    return jsonify({"report": report})
+    return jsonify({"report": report, "results": results})
 
 
 @app.route("/api/history", methods=["GET"])

@@ -2,10 +2,12 @@
 """
 main_loop.py - Jarvis control loop.
 
-The live runtime wires inherited Claude assets into Jarvis and now includes
-real handlers for benchmark, self-check, and conversational chat.
+The live runtime wires inherited Claude assets into Jarvis, supports grounded
+repo question answering, keeps an offline memory trail, and exposes an
+LLM-development roadmap inspired by mlabonne/llm-course.
 """
 
+import os
 import re
 import time
 import urllib.error
@@ -13,8 +15,12 @@ import urllib.request
 from typing import Optional
 
 from benchmarking.benchmark_runner import BenchmarkRunner
+from cognition.foundation import NextGenerationFoundation
 from core.change_history import ChangeHistoryStore
 from core.claude_inheritance import get_claude_inheritance_bridge
+from core.llm_lab import LLMLabGuide
+from core.offline_memory import OfflineMemory
+from core.repo_qa import RepoQuestionAnswerer
 from core.routing_models import RequestScope
 from models.model_contracts import ModelRequest, TaskType
 from models.model_router import ModelRouter
@@ -25,7 +31,8 @@ from tool_registry import ToolRegistry
 
 
 class AgentLoop:
-    def __init__(self) -> None:
+    def __init__(self, db_path: str = "jarvis_brain.db", project_root: Optional[str] = None) -> None:
+        self.project_root = project_root or os.getcwd()
         self.analyzer = IntentAnalyzer()
         self.history_store = ChangeHistoryStore()
         self.model_router = ModelRouter()
@@ -34,6 +41,10 @@ class AgentLoop:
         self.tool_registry = ToolRegistry(plugin_loader=self.plugin_loader)
         self.claude_bridge = get_claude_inheritance_bridge()
         self.benchmark_runner = BenchmarkRunner()
+        self.memory = OfflineMemory(db_path=db_path)
+        self.repo_qa = RepoQuestionAnswerer(project_root=self.project_root)
+        self.llm_lab = LLMLabGuide(self.memory)
+        self.foundation = NextGenerationFoundation(project_root=self.project_root, db_path=db_path)
         self.last_runtime_response = ""
         self._ollama_probe = {"checked_at": 0.0, "reachable": False}
 
@@ -41,7 +52,17 @@ class AgentLoop:
         status = self.claude_bridge.get_runtime_status()
         status["tool_count"] = len(self.tool_registry.get_all_tools())
         status["chat_ready"] = self._has_any_model_backend()
+        status["memory"] = self.memory.stats()
+        status["repo"] = self.repo_qa.get_repo_stats()
+        status["llm_lab"] = self.llm_lab.get_status()
+        status["cognitive_foundation"] = self.foundation.get_status()
         return status
+
+    def _finalize_response(self, prompt: str, response: str, topic: str = "chat", remember: bool = True) -> str:
+        self.last_runtime_response = response
+        if remember:
+            self.memory.remember_exchange(prompt, response, topic=topic)
+        return response
 
     def _help_handler(self) -> str:
         runtime = self.get_runtime_status()
@@ -54,18 +75,23 @@ class AgentLoop:
             "- benchmark               (run built-in regression checks)\n"
             "- help                    (this help)\n"
             "- self-check              (runtime diagnostics)\n"
-            "- status                  (local status)\n\n"
-            "Claude inheritance:\n"
+            "- status                  (local status)\n"
+            "- claude status           (Claude inheritance summary)\n"
+            "- llm roadmap             (Jarvis LLM development plan)\n"
+            "- llm export dataset      (write starter SFT JSONL from Jarvis memory)\n"
+            "- cognitive status        (next-generation architecture status)\n\n"
+            "Repo and Claude workflows:\n"
+            "- explain core/main_loop.py\n"
+            "- where is PluginLoader used?\n"
             "- /plan <task>\n"
             "- /tdd <task>\n"
             "- /code-review <scope>\n"
-            "- /verify <task>\n"
-            "- @architect <task>\n"
-            "- @planner <task>\n"
-            "- claude status\n\n"
+            "- @architect <task>\n\n"
             f"Loaded inherited assets: {runtime['ecc_command_count']} ECC commands, "
-            f"{runtime['ecc_agent_count']} ECC agents, {runtime['cce_command_count']} "
-            f"Extended Source commands, {runtime['cce_skill_count']} Extended Source bundled skills.\n"
+            f"{runtime['ecc_agent_count']} ECC agents, {runtime['cce_command_count']} Extended Source commands.\n"
+            f"Offline memory episodes: {runtime['memory']['episodes']}\n"
+            f"Indexed repo files: {runtime['repo']['indexed_files']}\n"
+            f"Cognitive foundation roles: {runtime['cognitive_foundation']['model_roles']}\n"
             f"Chat backend status: {chat_state}."
         )
 
@@ -78,11 +104,9 @@ class AgentLoop:
             f"- Passed: {results.get('passed', 0)}/{results.get('total', 0)}",
             f"- Success rate: {results.get('success_rate', 0.0) * 100:.0f}%",
         ]
-
         for case in results.get("cases", []):
             status = "PASS" if case.get("passed") else "FAIL"
             lines.append(f"- {case.get('name')}: {status}")
-
         return "\n".join(lines)
 
     def _benchmark_handler(self) -> str:
@@ -120,6 +144,17 @@ class AgentLoop:
             "selected_backend": routing.selected_backend,
             "fallback_chain": routing.fallback_chain,
             "providers": providers,
+            "memory_episodes": runtime["memory"]["episodes"],
+            "working_items": runtime["memory"]["working_items"],
+            "repo_files": runtime["repo"]["indexed_files"],
+            "repo_python_files": runtime["repo"]["python_files"],
+            "llm_lab_phase": runtime["llm_lab"]["phase"],
+            "llm_lab_focus": runtime["llm_lab"]["focus"],
+            "llm_lab_dataset_examples": runtime["llm_lab"].get("dataset_examples", 0),
+            "foundation_model_roles": runtime["cognitive_foundation"]["model_roles"],
+            "foundation_verifier_stages": runtime["cognitive_foundation"]["verifier_stages"],
+            "foundation_autonomy_jobs": runtime["cognitive_foundation"]["autonomy_jobs"],
+            "foundation_benchmark_tracks": runtime["cognitive_foundation"]["benchmark_tracks"],
         }
 
     def format_self_check(self, results: dict) -> str:
@@ -143,15 +178,25 @@ class AgentLoop:
             f"- Extended Source catalog: {results.get('claude_extended_commands')} commands, "
             f"{results.get('claude_extended_skills')} skills discovered",
             f"- Tool registry: {results.get('tool_count')} actions visible",
+            f"- Offline memory: {results.get('memory_episodes')} episodes, {results.get('working_items')} working items",
+            f"- Repo intelligence: {results.get('repo_files')} indexed files, "
+            f"{results.get('repo_python_files')} Python files",
             f"- Chat readiness: {readiness}",
             f"- Model routing preference: {results.get('selected_backend')} -> "
             f"{', '.join(results.get('fallback_chain', [])) or 'none'}",
+            f"- LLM lab phase: {results.get('llm_lab_phase')} ({results.get('llm_lab_focus')})",
+            f"- Cognitive foundation: {results.get('foundation_model_roles')} model roles, "
+            f"{results.get('foundation_verifier_stages')} verifier stages, "
+            f"{results.get('foundation_autonomy_jobs')} autonomy jobs, "
+            f"{results.get('foundation_benchmark_tracks')} benchmark tracks",
         ]
+        if results.get("llm_lab_dataset_examples"):
+            lines.append(f"- LLM lab dataset examples: {results.get('llm_lab_dataset_examples')}")
         lines.extend(provider_bits)
 
         if not results.get("chat_ready"):
             lines.append(
-                "- Why replies may feel weak: no reachable model backend was detected, so Jarvis falls back to local built-in responses."
+                "- Why replies may feel weak: no reachable model backend was detected, so Jarvis falls back to grounded local logic."
             )
 
         return "\n".join(lines)
@@ -267,28 +312,18 @@ class AgentLoop:
             f"Successes: {summary.successful_changes}, Failures: {summary.failed_changes}\n"
             f"Claude commands loaded: {runtime['ecc_command_count']}\n"
             f"Claude agents loaded: {runtime['ecc_agent_count']}\n"
+            f"Offline memory episodes: {runtime['memory']['episodes']}\n"
+            f"Indexed repo files: {runtime['repo']['indexed_files']}\n"
+            f"Cognitive model roles: {runtime['cognitive_foundation']['model_roles']}\n"
+            f"Autonomy jobs defined: {runtime['cognitive_foundation']['autonomy_jobs']}\n"
             f"Recent attempts: {recent_attempts}"
-        )
-
-    def _repo_code_handler(self) -> str:
-        return (
-            "Repository investigation detected. Ask for a specific file or use an inherited workflow like "
-            "`/code-review core/main_loop.py` or `@architect redesign the runtime`."
         )
 
     def _select_chat_task_type(self, prompt: str) -> TaskType:
         lowered = prompt.lower()
         coding_markers = (
-            "code",
-            "bug",
-            "fix",
-            "refactor",
-            "function",
-            "class",
-            "python",
-            ".py",
-            "review",
-            "test",
+            "code", "bug", "fix", "refactor", "function", "class", "python",
+            ".py", "review", "test", "repo", "module",
         )
         reasoning_markers = ("why", "how", "plan", "design", "architecture", "should", "question")
 
@@ -299,18 +334,17 @@ class AgentLoop:
         return TaskType.CHAT
 
     def _compose_chat_prompt(self, prompt: str) -> str:
+        context = self.memory.build_chat_context(prompt, limit=4)
+        sections = [
+            "You are Jarvis, a helpful coding assistant with inherited Claude workflows.",
+        ]
+        if context:
+            sections.append(f"Relevant local memory:\n{context}")
         if self.last_runtime_response:
-            return (
-                "You are Jarvis, a helpful coding assistant with inherited Claude workflows.\n\n"
-                f"Previous Jarvis reply:\n{self.last_runtime_response}\n\n"
-                f"User message:\n{prompt}\n\n"
-                "Reply naturally and concretely."
-            )
-        return (
-            "You are Jarvis, a helpful coding assistant with inherited Claude workflows.\n\n"
-            f"User message:\n{prompt}\n\n"
-            "Reply naturally and concretely."
-        )
+            sections.append(f"Previous Jarvis reply:\n{self.last_runtime_response}")
+        sections.append(f"User message:\n{prompt}")
+        sections.append("Reply naturally, concretely, and keep it grounded in the local repo/runtime.")
+        return "\n\n".join(sections)
 
     def _chat_with_model(self, prompt: str) -> Optional[str]:
         if not self._has_any_model_backend():
@@ -338,17 +372,19 @@ class AgentLoop:
 
         if re.search(r"^(hi|hello|hey|hiya|yo|good morning|good evening)[!. ]*$", lowered):
             return (
-                "Hi! I'm here. Ask me to inspect code, run `self-check`, show `claude status`, or use `/plan` to start a change."
+                "Hi! I'm here. Ask me to inspect repo code, run `self-check`, show `claude status`, or use `/plan` to start a change."
             )
 
         if re.search(r"\b(thanks|thank you|thx)\b", lowered):
-            return "You're welcome. I can review code, plan work, or diagnose the runtime next."
+            return "You're welcome. I can review the repo, improve Jarvis, or map out the LLM plan next."
 
         if re.search(r"(who are you|what are you|your name)", lowered):
             runtime = self.get_runtime_status()
             return (
                 "I'm Jarvis, your local coding assistant. Right now I'm running a Python control loop with "
-                f"{runtime['ecc_command_count']} inherited Claude commands and {runtime['ecc_agent_count']} inherited Claude agents."
+                f"{runtime['ecc_command_count']} inherited Claude commands, "
+                f"{runtime['ecc_agent_count']} inherited Claude agents, and "
+                f"{runtime['repo']['indexed_files']} indexed repo files."
             )
 
         if re.search(r"^(bye|goodbye|see you|quit|exit)[!. ]*$", lowered):
@@ -365,11 +401,36 @@ class AgentLoop:
         if model_response is not None:
             return model_response
 
+        related_memory = self.memory.build_chat_context(prompt, limit=3)
+        if related_memory:
+            return (
+                "I couldn't reach a conversational model backend just now, but I did find related local memory:\n"
+                f"{related_memory}\n\n"
+                "You can also use built-in workflows like `claude status`, `self-check`, `llm roadmap`, "
+                "`/plan <task>`, or `explain core/main_loop.py`."
+            )
+
         return (
             "I couldn't reach a conversational model backend just now, but Jarvis is still running. "
-            "You can use built-in workflows like `claude status`, `self-check`, `/plan <task>`, "
-            "`/tdd <task>`, or `/code-review <file>`."
+            "You can use grounded local workflows like `claude status`, `self-check`, `llm roadmap`, "
+            "`/plan <task>`, or `explain core/main_loop.py`."
         )
+
+    def _maybe_handle_repo_question(self, prompt: str) -> Optional[str]:
+        if self.repo_qa.matches(prompt):
+            return self.repo_qa.answer(prompt)
+        return None
+
+    def _maybe_handle_llm_lab(self, prompt: str) -> Optional[str]:
+        if self.llm_lab.matches(prompt):
+            return self.llm_lab.handle(prompt)
+        return None
+
+    def _maybe_handle_cognitive_status(self, prompt: str) -> Optional[str]:
+        lowered = (prompt or "").lower()
+        if re.search(r"\b(cognitive status|architecture status|jarvis architecture|autonomy status|verifier status|model stack status)\b", lowered):
+            return self.foundation.format_status()
+        return None
 
     def run_cycle(self, prompt: str) -> str:
         prompt = prompt.strip()
@@ -378,8 +439,19 @@ class AgentLoop:
 
         claude_response = self._maybe_handle_claude_runtime(prompt)
         if claude_response is not None:
-            self.last_runtime_response = claude_response
-            return claude_response
+            return self._finalize_response(prompt, claude_response, topic="claude_runtime")
+
+        llm_lab_response = self._maybe_handle_llm_lab(prompt)
+        if llm_lab_response is not None:
+            return self._finalize_response(prompt, llm_lab_response, topic="llm_lab")
+
+        foundation_response = self._maybe_handle_cognitive_status(prompt)
+        if foundation_response is not None:
+            return self._finalize_response(prompt, foundation_response, topic="cognitive_foundation")
+
+        repo_response = self._maybe_handle_repo_question(prompt)
+        if repo_response is not None:
+            return self._finalize_response(prompt, repo_response, topic="repo_qa")
 
         decision = self.analyzer.analyze_intent(prompt)
 
@@ -387,38 +459,32 @@ class AgentLoop:
             pass
 
         if decision.request_scope == RequestScope.HELP_REQUEST:
-            self.last_runtime_response = self._help_handler()
-            return self.last_runtime_response
+            return self._finalize_response(prompt, self._help_handler(), topic="help")
 
         if decision.request_scope == RequestScope.BENCHMARK_REQUEST:
-            self.last_runtime_response = self._benchmark_handler()
-            return self.last_runtime_response
+            return self._finalize_response(prompt, self._benchmark_handler(), topic="benchmark")
 
         if decision.request_scope == RequestScope.SELF_CHECK_REQUEST:
-            self.last_runtime_response = self._self_check_handler()
-            return self.last_runtime_response
+            return self._finalize_response(prompt, self._self_check_handler(), topic="self_check")
 
         if decision.request_scope == RequestScope.LOCAL_STATUS:
-            self.last_runtime_response = self._local_status_handler()
-            return self.last_runtime_response
+            return self._finalize_response(prompt, self._local_status_handler(), topic="status")
 
         if decision.request_scope == RequestScope.LOCAL_HISTORY:
-            self.last_runtime_response = self.history_store.get_history_summary()
-            return self.last_runtime_response
+            return self._finalize_response(prompt, self.history_store.get_history_summary(), topic="history")
 
         if decision.request_scope == RequestScope.SELF_IMPROVEMENT_REQUEST:
-            self.last_runtime_response = (
-                "Self-improvement mode is gated for safety. Tell me the exact file and goal, or use `/plan` first so I can propose the change cleanly."
+            response = (
+                "Self-improvement mode is gated for safety. Tell me the exact file and goal, "
+                "or use `/plan` first so I can propose the change cleanly."
             )
-            return self.last_runtime_response
+            return self._finalize_response(prompt, response, topic="self_improvement")
 
         if decision.request_scope == RequestScope.REPO_CODE_QUESTION:
-            self.last_runtime_response = self._repo_code_handler()
-            return self.last_runtime_response
+            return self._finalize_response(prompt, self.repo_qa.answer(prompt), topic="repo_qa")
 
         if decision.request_scope == RequestScope.CHAT:
-            self.last_runtime_response = self._chat_handler(prompt)
-            return self.last_runtime_response
+            return self._finalize_response(prompt, self._chat_handler(prompt), topic="chat")
 
-        self.last_runtime_response = "Unsupported request flow hit. Safely failing behavior execution."
-        return self.last_runtime_response
+        response = "Unsupported request flow hit. Safely failing behavior execution."
+        return self._finalize_response(prompt, response, topic="fallback")

@@ -1,113 +1,104 @@
-# Jarvis V2 — Self-Debugging & Self-Patching System
+# Jarvis Next-Generation Implementation Plan
 
-Adds real supervised self-improvement with validation and rollback.
+This repository is evolving from a task-oriented assistant into a persistent
+engineering intelligence. The goal is not to fake autonomy or human cognition,
+but to assemble explicit, testable subsystems that together approximate a
+stable cognitive architecture.
 
-## Architecture
+## Active runtime path
 
-```mermaid
-graph TB
-    Issue["Bug / Improvement Goal"] --> SI["Self-Improvement Engine"]
-    SI --> CM["Codebase Manager"]
-    SI --> LLM["Ollama LLM"]
-    CM -->|read| Files["Project Files"]
-    LLM -->|draft| Patch["Patch"]
-    Patch --> PM["Patch Manager"]
-    PM -->|backup| Backup["Backup Copy"]
-    PM -->|apply| Files
-    Files --> TR["Test Runner"]
-    TR -->|pass| Keep["Keep Patch ✓"]
-    TR -->|fail| RB["Rollback ✗"]
-    RB --> Backup
-    Keep --> Proc["Store in Procedural Memory"]
-```
+- `jarvis.py`
+- `core/main_loop.py`
+- `web_server.py`
+- `core/offline_memory.py`
+- `core/repo_qa.py`
+- `core/llm_lab.py`
+- `cognition/foundation.py`
 
-## Proposed Changes
+## File-by-file build plan
 
-### Phase 1: Core Infrastructure
+### Runtime orchestration
 
----
+- `core/main_loop.py`
+  Extend the live loop to call perception, planning, verifier, autonomy, and
+  memory services in a staged order rather than a single fallback chain.
+- `cognition/foundation.py`
+  Central architecture ledger that reports what is real now, partial now, and
+  still aspirational.
+- `planning/plan_schema.py`
+  Shared plan objects for user tasks, internal tasks, and self-improvement.
 
-#### [NEW] [codebase_manager.py](file:///c:/Users/DELL/OneDrive/Desktop/Test/codebase_manager.py)
-- File enumeration, read/write with safety restrictions
-- Backup creation before any edit, restore from backup
-- Diff generation, editable path validation
-- Only allows [.py](file:///c:/Users/DELL/OneDrive/Desktop/Test/brain.py), `.json`, `.yaml`, `.toml`, [.md](file:///C:/Users/DELL/.gemini/antigravity/brain/b3c8ba79-690f-417a-b53f-478a0da2426e/task.md)
-- Blocks system files, binaries, databases, OS directories
+### Memory system
 
-#### [NEW] [patch_manager.py](file:///c:/Users/DELL/OneDrive/Desktop/Test/patch_manager.py)
-- Full rewrite and targeted snippet replacement
-- Patch history with metadata (id, path, reason, diff, status)
-- Rollback by restoring backup
-- Status tracking: applied → verified / rolled_back / failed
+- `core/offline_memory.py`
+  Keep durable working and episodic memory online even with no model backend.
+- `memory/memory_router.py`
+  Upgrade ranking, consolidation, and conflict handling.
+- `dataset_builder/jarvis_dataset_schema.py`
+  Convert useful Jarvis interactions into structured training examples.
 
-#### [NEW] [test_runner.py](file:///c:/Users/DELL/OneDrive/Desktop/Test/test_runner.py)
-- `py_compile` validation, smoke tests, pytest support
-- Stdout/stderr/exit code capture with timeout
-- Before/after comparison for patch validation
+### Reasoning and verification
 
----
+- `reasoning/intent_analyzer.py`
+  Improve decomposition, ambiguity detection, and escalation triggers.
+- `verifier/verification_pipeline.py`
+  Require impact analysis, sandboxing, benchmarks, and rollback readiness.
+- `reflection/reflection_engine.py`
+  Replace weak free-form reflection with structured expected-vs-actual review.
 
-### Phase 2: Integration
+### Autonomy and self-improvement
 
----
+- `autonomy/session_manager.py`
+  Define bounded background jobs and audit requirements.
+- `scheduler.py`
+  Eventually schedule background jobs through the bounded autonomy registry.
+- `self_improvement/patch_proposer.py`
+  Keep proposals small, explicit, and tied to metrics.
+- `self_improvement/patch_evaluator.py`
+  Compare baseline vs candidate before adoption.
+- `rollback/rollback_controller.py`
+  Enforce rollback readiness before any high-risk change.
 
-#### [MODIFY] [jarvis.py](file:///c:/Users/DELL/OneDrive/Desktop/Test/jarvis.py)
-- New action handlers: `read_code`, `search_code`, `apply_patch`, `run_tests`, `rollback_patch`, `self_improve`
-- User commands: "show last patch", "patch history", "show diff", "rollback", "self-check"
+### Model stack and training
 
-#### [MODIFY] [memory.py](file:///c:/Users/DELL/OneDrive/Desktop/Test/memory.py)
-- New tables: `patch_log`, `self_improvement_log`
-- Methods: `log_patch()`, `log_self_improvement()`, `get_recent_patches()`
-- Successful fixes stored as procedural memory
+- `model_stack/jarvis_model_stack.py`
+  Define separate model roles instead of pretending one model does everything.
+- `training_pipeline/llm_course_pipeline.py`
+  Ground fine-tuning, alignment, evaluation, and quantization in
+  `mlabonne/llm-course`.
+- `data/*.jsonl`
+  Maintain Jarvis-specific training and evaluation corpora.
 
----
+### Benchmarks and deployment
 
-### Phase 3: Intelligence
+- `benchmarks/cognitive_regression.py`
+  Measure memory continuity, repo grounding, verifier discipline, autonomy
+  safety, and dataset quality.
+- `benchmarking/benchmark_runner.py`
+  Fold cognitive regression cases into the live benchmark runner.
+- `web_server.py`
+  Surface architecture, verifier, memory, and autonomy status in the UI.
 
----
+## Phase roadmap
 
-#### [NEW] [self_improvement.py](file:///c:/Users/DELL/OneDrive/Desktop/Test/self_improvement.py)
-- Full debug-and-patch pipeline: analyze → plan → patch → test → keep/rollback
-- Safety policy: safe / restricted / forbidden scopes
-- Built-in skills: `debug_traceback`, `patch_runtime_bug`, `improve_module_safely`, `self_check`
+1. Foundation
+   Add explicit architecture modules, dataset schemas, verifier stages, and
+   autonomy job definitions.
+2. Integration
+   Route the live loop through the new planning, verifier, and memory surfaces.
+3. Evaluation
+   Benchmark routing, grounding, safety, and training-data quality.
+4. Controlled self-improvement
+   Only adopt measured improvements with rollback support.
+5. Model specialization
+   Train and route Jarvis-specific roles for general, coding, reasoning,
+   verifier, and memory tasks.
 
-#### [MODIFY] [planner.py](file:///c:/Users/DELL/OneDrive/Desktop/Test/planner.py)
-- Self-improvement intent detection
-- Plan templates for "fix bug", "debug yourself", "improve module"
+## Honest realism
 
-#### [MODIFY] [ai_brain.py](file:///c:/Users/DELL/OneDrive/Desktop/Test/ai_brain.py)
-- New tool rules for code actions
-- Rule patterns for self-improvement commands
-
----
-
-### Phase 4: Audit & Evaluation
-
----
-
-#### [MODIFY] [evaluator.py](file:///c:/Users/DELL/OneDrive/Desktop/Test/evaluator.py)
-- `evaluate_patch()`: did symptom disappear? compile pass? new errors? minimal change?
-- Benchmark: code health check category
-
----
-
-### Phase 5: Autostart
-
----
-
-#### [NEW] [autostart.py](file:///c:/Users/DELL/OneDrive/Desktop/Test/autostart.py)
-- Creates Windows startup shortcut via `startup` folder
-- Runs Jarvis as background process on login
-- Install/uninstall commands
-
-## Verification Plan
-
-### Automated
-- All files pass `py_compile`
-- Self-check command runs successfully
-- Patch → rollback cycle works on a test file
-
-### Manual
-- Tell Jarvis "debug yourself" and verify the full pipeline
-- Tell Jarvis "show patch history" and verify audit trail
-- Reboot laptop and verify Jarvis autostart
+- Real now: offline memory, repo-grounded answers, inherited Claude command
+  surface, LLM roadmap, dataset export, streaming web UI.
+- Partially real: scheduler, reflection, rollback, model routing,
+  self-improvement scaffolding.
+- Not real yet: trustworthy unsupervised self-coding, persistent autonomous code
+  evolution, or a trained Jarvis-specific model family.
